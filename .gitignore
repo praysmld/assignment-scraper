@@ -1,0 +1,53 @@
+# Environment variables (contains secrets)
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker volumes
+docker-data/
+postgres_data/
+redis_data/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Scraped content (if you don't want to commit scraped data)
+scraped_data/
+scraped_files/
+downloads/
+screenshots/

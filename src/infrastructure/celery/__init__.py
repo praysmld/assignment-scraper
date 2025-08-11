@@ -1,0 +1,1 @@
+"""Celery integration - Background task processing.""" 
