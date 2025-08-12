@@ -1,7 +1,7 @@
 """Pydantic models for scraping API."""
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl, validator
@@ -180,11 +180,54 @@ class UrlValidationRequest(BaseModel):
 
 
 class UrlValidationResponse(BaseModel):
-    """Response model for URL validation."""
-    
+    """Response for URL validation."""
     url: str
     is_valid: bool
-    message: Optional[str]
+    reason: Optional[str] = None
+    suggestions: List[str] = []
+
+class SearchJobListingsRequest(BaseModel):
+    """Request model for searching job listings."""
+    query: str
+    location: Optional[str] = None
+    max_results: int = Field(default=20, le=100)
+
+# Chat Interface Models
+class ChatMessage(BaseModel):
+    """Chat message model."""
+    role: Literal["user", "assistant", "system"] = "user"
+    content: str
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+class ChatRequest(BaseModel):
+    """Request model for chat endpoint."""
+    message: str
+    job_id: Optional[UUID] = None  # Focus on specific scraping job
+    data_type: Optional[str] = None  # Filter by data type
+    context: Optional[str] = None  # Additional context
+    conversation_id: Optional[str] = None  # For conversation history
+
+class ChatResponse(BaseModel):
+    """Response model for chat endpoint."""
+    response: str
+    data_used: List[UUID] = []  # IDs of scraped data used in response
+    suggestions: List[str] = []  # Suggested follow-up questions
+    conversation_id: str
+    metadata: Dict[str, Any] = {}
+
+class DataSummaryRequest(BaseModel):
+    """Request for data summary."""
+    data_type: Optional[str] = None
+    job_id: Optional[UUID] = None
+    date_range: Optional[str] = None  # "last_week", "last_month", etc.
+
+class DataSummaryResponse(BaseModel):
+    """Response with data summary."""
+    total_records: int
+    data_types: Dict[str, int]
+    recent_jobs: List[str]
+    key_insights: List[str]
+    time_range: str
 
 
 class ErrorResponse(BaseModel):

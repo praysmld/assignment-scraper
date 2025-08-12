@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Database Configuration
     database_url: str = Field(
-        default="postgresql+asyncpg://scraper:scraper123@localhost:5432/scraper_db",
+        default="postgresql+psycopg2://scraper:scraper123@localhost:5432/scraper_db",
         env="DATABASE_URL"
     )
     database_pool_size: int = Field(default=20, env="DATABASE_POOL_SIZE")

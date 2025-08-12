@@ -1,49 +1,58 @@
 """Database connection and session management."""
 
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from contextlib import contextmanager
+from typing import Generator
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 
 from ...config.settings import settings
 
+# Create the engine with proper configuration
+engine = create_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_size=settings.database_pool_size,
+    max_overflow=settings.database_max_overflow,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
 
-class DatabaseManager:
-    """Database connection manager."""
-    
-    def __init__(self) -> None:
-        """Initialize database manager."""
-        self.engine = create_async_engine(
-            settings.database_url,
-            echo=settings.debug,
-            poolclass=NullPool if "sqlite" in settings.database_url else None,
-            pool_size=settings.database_pool_size,
-            max_overflow=settings.database_max_overflow,
-        )
-        
-        self.async_session_factory = async_sessionmaker(
-            bind=self.engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-        )
-    
-    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
-        """Get database session."""
-        async with self.async_session_factory() as session:
-            try:
-                yield session
-            finally:
-                await session.close()
-    
-    async def close(self) -> None:
-        """Close database connections."""
-        await self.engine.dispose()
+# Create a session factory
+SessionFactory = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+)
 
 
-# Global database manager instance
-db_manager = DatabaseManager()
+@contextmanager
+def get_db_session_context() -> Generator[Session, None, None]:
+    """Get a database session as a context manager."""
+    session = SessionFactory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency for getting database session."""
-    async for session in db_manager.get_session():
-        yield session 
+def get_db_session() -> Generator[Session, None, None]:
+    """Dependency for getting database session in FastAPI."""
+    session = SessionFactory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def close_db_connections() -> None:
+    """Close database connections."""
+    engine.dispose() 

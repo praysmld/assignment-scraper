@@ -2,6 +2,17 @@
 
 A comprehensive, production-ready web scraping solution built with FastAPI, featuring microservices architecture, advanced scraping techniques, and modern Python patterns.
 
+## ✨ Features
+
+- **Undetectable scraping** with Zendriver (Chrome DevTools Protocol)
+- **Multi-target scraping** (job listings, member clubs, support resources)  
+- **Asynchronous processing** with Celery
+- **RESTful API** with FastAPI
+- **Database migrations** with Alembic
+- **Monitoring** with Prometheus & Grafana
+- **Docker containerization** for easy deployment
+- **Chat interface** for conversational interaction with scraped data
+
 ## Features
 
 ### 🚀 Core Capabilities
@@ -201,6 +212,119 @@ The demo showcases:
 - ⚡ **Async-first design** for high-performance operations
 - 🍪 **Automatic cookie/session management**
 - 🖥️ **Real browser viewport** and user agent handling
+
+## 🤖 Chat Interface
+
+The Assignment Scraper now includes a **conversational AI interface** that allows you to interact with scraped data using natural language!
+
+### Chat Endpoints
+
+#### **POST `/api/v1/chat`** - Chat with Scraped Data
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What job listings are available?",
+    "job_id": null,
+    "data_type": "job_listing"
+  }'
+```
+
+**Response:**
+```json
+{
+  "response": "I found 15 job listings. Here are the top 3:\n\n1. **Python Developer** at TechCorp\n   📍 Sydney, NSW\n\n2. **Data Scientist** at DataCorp\n   📍 Melbourne, VIC\n\n3. **Software Engineer** at StartupCo\n   📍 Brisbane, QLD\n\n... and 12 more positions.",
+  "data_used": ["uuid1", "uuid2", "uuid3"],
+  "suggestions": [
+    "Show me the salary ranges for these positions",
+    "What are the common requirements?",
+    "Which locations have the most jobs?"
+  ],
+  "conversation_id": "conv-123",
+  "metadata": {
+    "intent": "search_jobs",
+    "data_count": 15
+  }
+}
+```
+
+### Example Chat Queries
+
+**🔍 Job-Related Queries:**
+```bash
+# Count jobs
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How many job listings do we have?"}'
+
+# Job requirements
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What are the common job requirements?"}'
+
+# Location-based search
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Show me jobs in Sydney"}'
+```
+
+**🏢 Club/Organization Queries:**
+```bash
+# Find clubs
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What soccer clubs have been found?"}'
+
+# Club locations
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How many clubs are in each location?"}'
+```
+
+**📋 Data Summary Queries:**
+```bash
+# Overview
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Give me a summary of all scraped data"}'
+
+# Recent data
+curl -X POST "http://localhost:8000/api/v1/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What was scraped recently?"}'
+```
+
+#### **POST `/api/v1/data-summary`** - Get Data Summary
+```bash
+curl -X POST "http://localhost:8000/api/v1/data-summary" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data_type": null,
+    "job_id": null,
+    "date_range": "last_week"
+  }'
+```
+
+#### **GET `/api/v1/chat/suggestions`** - Get Chat Suggestions
+```bash
+curl "http://localhost:8000/api/v1/chat/suggestions"
+```
+
+### Chat Features
+
+- **🎯 Intent Recognition:** Automatically understands what you're asking about
+- **🔍 Smart Filtering:** Filter by job ID, data type, or date range  
+- **💡 Suggestions:** Get follow-up question suggestions
+- **📊 Rich Responses:** Formatted responses with markdown, emojis, and structure
+- **🗣️ Conversation History:** Maintain context across multiple messages
+
+### Supported Data Types
+
+The chat interface can query three types of scraped data based on the PDF requirements:
+
+1. **`job_listing`** - Job opportunities from Medrecruit
+2. **`member_club`** - Soccer clubs from AZ Soccer Association  
+3. **`support_resource`** - Support resources from HP Support
 
 ## Configuration
 

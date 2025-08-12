@@ -9,10 +9,11 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 import uvicorn
 
 from .config.settings import settings
-from .infrastructure.database.database import get_db_session, db_manager
+from .infrastructure.database.database import get_db_session, close_db_connections, engine
 from .infrastructure.database.models import Base
 from .infrastructure.repositories.scraping_repository_impl import (
     SQLAlchemyScrapingJobRepository,
@@ -31,7 +32,10 @@ from .application.use_cases.scraping_use_cases import (
     DeleteScrapingJobUseCase,
     GetScrapedDataUseCase,
     ValidateUrlUseCase,
-    BulkScrapingUseCase
+    BulkScrapingUseCase,
+    SearchJobListingsUseCase,
+    ChatUseCase,
+    DataSummaryUseCase,
 )
 from .api.models.scraping_models import (
     CreateScrapingJobRequest,
@@ -44,8 +48,12 @@ from .api.models.scraping_models import (
     ErrorResponse,
     HealthCheckResponse,
     MetricsResponse,
-    SearchJobsRequest,
-    JobListingResponse
+    SearchJobListingsRequest,
+    JobListingResponse,
+    ChatRequest,
+    ChatResponse,
+    DataSummaryRequest,
+    DataSummaryResponse,
 )
 
 
@@ -56,15 +64,18 @@ async def lifespan(app: FastAPI):
     print("Starting Assignment Scraper API...")
     
     # Initialize database tables
-    async with db_manager.engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from .infrastructure.database.models import Base
+    from .infrastructure.database.database import engine
+    
+    Base.metadata.create_all(bind=engine)
     
     print("Database tables created successfully")
     yield
     
     # Shutdown
     print("Shutting down Assignment Scraper API...")
-    await db_manager.close()
+    from .infrastructure.database.database import close_db_connections
+    close_db_connections()
 
 
 # Create FastAPI application
@@ -88,12 +99,12 @@ app.add_middleware(
 
 
 # Dependency injection functions
-def get_job_repository(session=Depends(get_db_session)):
+def get_job_repository(session: AsyncSession = Depends(get_db_session)) -> SQLAlchemyScrapingJobRepository:
     """Get job repository instance."""
     return SQLAlchemyScrapingJobRepository(session)
 
 
-def get_data_repository(session=Depends(get_db_session)):
+def get_data_repository(session: AsyncSession = Depends(get_db_session)) -> SQLAlchemyScrapedDataRepository:
     """Get data repository instance."""
     return SQLAlchemyScrapedDataRepository(session)
 
@@ -113,18 +124,47 @@ async def get_job_scraper():
     return ModernJobListingScraperService()
 
 
+def get_search_job_listings_use_case(
+    data_repository: SQLAlchemyScrapedDataRepository = Depends(get_data_repository)
+) -> SearchJobListingsUseCase:
+    """Get search job listings use case."""
+    return SearchJobListingsUseCase(
+        data_repository=data_repository
+    )
+
+def get_chat_use_case(
+    data_repository: SQLAlchemyScrapedDataRepository = Depends(get_data_repository),
+    job_repository: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> ChatUseCase:
+    """Get chat use case."""
+    return ChatUseCase(
+        data_repository=data_repository,
+        job_repository=job_repository
+    )
+
+def get_data_summary_use_case(
+    data_repository: SQLAlchemyScrapedDataRepository = Depends(get_data_repository),
+    job_repository: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> DataSummaryUseCase:
+    """Get data summary use case."""
+    return DataSummaryUseCase(
+        data_repository=data_repository,
+        job_repository=job_repository
+    )
+
+
 # Use case dependency injection
 def get_create_job_use_case(
-    job_repo=Depends(get_job_repository)
-):
+    job_repo: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> CreateScrapingJobUseCase:
     """Get create job use case."""
     return CreateScrapingJobUseCase(job_repo)
 
 
 def get_execute_job_use_case(
-    job_repo=Depends(get_job_repository),
-    data_repo=Depends(get_data_repository),
-):
+    job_repo: SQLAlchemyScrapingJobRepository = Depends(get_job_repository),
+    data_repo: SQLAlchemyScrapedDataRepository = Depends(get_data_repository),
+) -> ExecuteScrapingJobUseCase:
     """Get execute job use case."""
     # Use Zendriver as primary scraper for undetectable scraping
     web_scraper = ZendriverScraperService()
@@ -138,29 +178,29 @@ def get_execute_job_use_case(
 
 
 def get_get_job_use_case(
-    job_repo=Depends(get_job_repository)
-):
+    job_repo: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> GetScrapingJobUseCase:
     """Get job use case."""
     return GetScrapingJobUseCase(job_repo)
 
 
 def get_list_jobs_use_case(
-    job_repo=Depends(get_job_repository)
-):
+    job_repo: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> ListScrapingJobsUseCase:
     """Get list jobs use case."""
     return ListScrapingJobsUseCase(job_repo)
 
 
 def get_delete_job_use_case(
-    job_repo=Depends(get_job_repository)
-):
+    job_repo: SQLAlchemyScrapingJobRepository = Depends(get_job_repository)
+) -> DeleteScrapingJobUseCase:
     """Get delete job use case."""
     return DeleteScrapingJobUseCase(job_repo)
 
 
 def get_get_data_use_case(
-    data_repo=Depends(get_data_repository)
-):
+    data_repo: SQLAlchemyScrapedDataRepository = Depends(get_data_repository)
+) -> GetScrapedDataUseCase:
     """Get data use case."""
     return GetScrapedDataUseCase(data_repo)
 
@@ -415,6 +455,7 @@ async def bulk_scrape(
     try:
         # Convert request targets to domain entities
         from .domain.entities.scraping import ScrapingTarget, DataType
+        from .infrastructure.database.database import get_db_session_context
         
         targets = []
         for target_req in request.targets:
@@ -430,7 +471,7 @@ async def bulk_scrape(
         
         # Create and execute bulk scraping job
         # Note: In a real implementation, this would use proper DI
-        async with get_db_session() as session:
+        with get_db_session_context() as session:
             job_repo = SQLAlchemyScrapingJobRepository(session)
             web_scraper = HttpWebScraperService()
             
@@ -456,35 +497,29 @@ async def bulk_scrape(
 
 
 @app.post("/api/v1/search-jobs", response_model=List[JobListingResponse])
-async def search_jobs(request: SearchJobsRequest):
-    """Search for job listings on job boards."""
+async def search_job_listings(
+    request: SearchJobListingsRequest,
+    use_case: SearchJobListingsUseCase = Depends(get_search_job_listings_use_case)
+):
+    """Search for job listings in scraped data."""
     try:
-        job_scraper = ModernJobListingScraperService()
-        
-        jobs = await job_scraper.search_jobs(
-            base_url=str(request.base_url),
+        results = await use_case.execute(
             query=request.query,
             location=request.location
         )
         
-        # Limit results
-        jobs = jobs[:request.max_results]
-        
         return [
             JobListingResponse(
-                title=job.title,
-                company=job.company,
-                location=job.location,
-                description=job.description,
-                salary=job.salary,
-                requirements=job.requirements,
-                benefits=job.benefits,
-                employment_type=job.employment_type,
-                experience_level=job.experience_level,
-                posted_date=job.posted_date,
-                application_url=job.application_url
+                title=result.get("title", "Unknown"),
+                company=result.get("company", "Unknown"),
+                location=result.get("location", "Unknown"),
+                description=result.get("description", ""),
+                requirements=result.get("requirements", []),
+                salary=result.get("salary"),
+                url=result.get("url", ""),
+                scraped_at=result.get("scraped_at")
             )
-            for job in jobs
+            for result in results
         ]
     
     except Exception as e:
@@ -492,6 +527,81 @@ async def search_jobs(request: SearchJobsRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+# Chat Endpoints
+@app.post("/api/v1/chat", response_model=ChatResponse)
+async def chat_with_data(
+    request: ChatRequest,
+    use_case: ChatUseCase = Depends(get_chat_use_case)
+):
+    """Chat with scraped data using natural language."""
+    try:
+        result = await use_case.execute(
+            message=request.message,
+            job_id=request.job_id,
+            data_type=request.data_type,
+            conversation_id=request.conversation_id
+        )
+        
+        return ChatResponse(
+            response=result["response"],
+            data_used=result["data_used"],
+            suggestions=result["suggestions"],
+            conversation_id=result["conversation_id"],
+            metadata=result["metadata"]
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Chat error: {str(e)}"
+        )
+
+
+@app.post("/api/v1/data-summary", response_model=DataSummaryResponse)
+async def get_data_summary(
+    request: DataSummaryRequest,
+    use_case: DataSummaryUseCase = Depends(get_data_summary_use_case)
+):
+    """Get comprehensive summary of scraped data."""
+    try:
+        result = await use_case.execute(
+            data_type=request.data_type,
+            job_id=request.job_id,
+            date_range=request.date_range
+        )
+        
+        return DataSummaryResponse(
+            total_records=result["total_records"],
+            data_types=result["data_types"],
+            recent_jobs=result["recent_jobs"],
+            key_insights=result["key_insights"],
+            time_range=result["time_range"]
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/chat/suggestions")
+async def get_chat_suggestions():
+    """Get suggested questions for the chat interface."""
+    return {
+        "suggestions": [
+            "What job listings are available?",
+            "Show me recent scraping results",
+            "How many positions are there in total?",
+            "What clubs have been found?",
+            "Give me a summary of all data",
+            "What are the common job requirements?",
+            "Show me support resources",
+            "What was scraped today?"
+        ]
+    }
 
 
 # Helper functions

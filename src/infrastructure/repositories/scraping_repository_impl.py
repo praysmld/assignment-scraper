@@ -5,8 +5,7 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, delete, and_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
 
 from ...domain.entities.scraping import ScrapingJob, ScrapedData, ScrapingStatus, DataType
 from ...domain.repositories.scraping_repository import (
@@ -19,7 +18,7 @@ from ..database.models import ScrapingJobModel, ScrapedDataModel
 class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
     """SQLAlchemy implementation of scraping job repository."""
     
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: Session) -> None:
         """Initialize repository with database session."""
         self.session = session
     
@@ -49,10 +48,9 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
         )
         
         self.session.add(job_model)
-        await self.session.commit()
-        await self.session.refresh(job_model)
+        self.session.flush()
         
-        return await self._model_to_entity(job_model)
+        return self._model_to_entity(job_model)
     
     async def find_by_id(self, job_id: UUID) -> Optional[ScrapingJob]:
         """Find a scraping job by ID."""
@@ -60,11 +58,10 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
             ScrapingJobModel.id == job_id
         ).options(selectinload(ScrapingJobModel.scraped_data))
         
-        result = await self.session.execute(query)
-        job_model = result.scalar_one_or_none()
+        job_model = self.session.execute(query).scalar_one_or_none()
         
         if job_model:
-            return await self._model_to_entity(job_model)
+            return self._model_to_entity(job_model)
         return None
     
     async def find_all(self, limit: int = 100, offset: int = 0) -> List[ScrapingJob]:
@@ -73,10 +70,9 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
             selectinload(ScrapingJobModel.scraped_data)
         ).order_by(ScrapingJobModel.created_at.desc())
         
-        result = await self.session.execute(query)
-        job_models = result.scalars().all()
+        job_models = self.session.execute(query).scalars().all()
         
-        return [await self._model_to_entity(model) for model in job_models]
+        return [self._model_to_entity(model) for model in job_models]
     
     async def find_by_status(
         self, 
@@ -91,16 +87,14 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
             selectinload(ScrapingJobModel.scraped_data)
         ).order_by(ScrapingJobModel.created_at.desc())
         
-        result = await self.session.execute(query)
-        job_models = result.scalars().all()
+        job_models = self.session.execute(query).scalars().all()
         
-        return [await self._model_to_entity(model) for model in job_models]
+        return [self._model_to_entity(model) for model in job_models]
     
     async def update(self, job: ScrapingJob) -> ScrapingJob:
         """Update an existing scraping job."""
         query = select(ScrapingJobModel).where(ScrapingJobModel.id == job.id)
-        result = await self.session.execute(query)
-        job_model = result.scalar_one_or_none()
+        job_model = self.session.execute(query).scalar_one_or_none()
         
         if job_model:
             job_model.name = job.name
@@ -121,22 +115,20 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
             job_model.started_at = job.started_at
             job_model.completed_at = job.completed_at
             
-            await self.session.commit()
-            await self.session.refresh(job_model)
+            self.session.flush()
             
-            return await self._model_to_entity(job_model)
+            return self._model_to_entity(job_model)
         
         raise ValueError(f"Job with ID {job.id} not found")
     
     async def delete(self, job_id: UUID) -> bool:
         """Delete a scraping job."""
         query = delete(ScrapingJobModel).where(ScrapingJobModel.id == job_id)
-        result = await self.session.execute(query)
-        await self.session.commit()
+        result = self.session.execute(query)
         
         return result.rowcount > 0
     
-    async def _model_to_entity(self, model: ScrapingJobModel) -> ScrapingJob:
+    def _model_to_entity(self, model: ScrapingJobModel) -> ScrapingJob:
         """Convert database model to domain entity."""
         from ...domain.entities.scraping import ScrapingTarget
         
@@ -183,7 +175,7 @@ class SQLAlchemyScrapingJobRepository(ScrapingJobRepository):
 class SQLAlchemyScrapedDataRepository(ScrapedDataRepository):
     """SQLAlchemy implementation of scraped data repository."""
     
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: Session) -> None:
         """Initialize repository with database session."""
         self.session = session
     
@@ -200,16 +192,14 @@ class SQLAlchemyScrapedDataRepository(ScrapedDataRepository):
         )
         
         self.session.add(data_model)
-        await self.session.commit()
-        await self.session.refresh(data_model)
+        self.session.flush()
         
         return self._model_to_entity(data_model)
     
     async def find_by_job_id(self, job_id: UUID) -> List[ScrapedData]:
         """Find scraped data by job ID."""
         query = select(ScrapedDataModel).where(ScrapedDataModel.job_id == job_id)
-        result = await self.session.execute(query)
-        data_models = result.scalars().all()
+        data_models = self.session.execute(query).scalars().all()
         
         return [self._model_to_entity(model) for model in data_models]
     
@@ -218,8 +208,7 @@ class SQLAlchemyScrapedDataRepository(ScrapedDataRepository):
         query = select(ScrapedDataModel).where(
             ScrapedDataModel.source_url == source_url
         )
-        result = await self.session.execute(query)
-        data_models = result.scalars().all()
+        data_models = self.session.execute(query).scalars().all()
         
         return [self._model_to_entity(model) for model in data_models]
     
@@ -236,8 +225,7 @@ class SQLAlchemyScrapedDataRepository(ScrapedDataRepository):
             ScrapedDataModel.scraped_at.desc()
         )
         
-        result = await self.session.execute(query)
-        data_models = result.scalars().all()
+        data_models = self.session.execute(query).scalars().all()
         
         return [self._model_to_entity(model) for model in data_models]
     
@@ -249,8 +237,7 @@ class SQLAlchemyScrapedDataRepository(ScrapedDataRepository):
             ScrapedDataModel.scraped_at < cutoff_date
         )
         
-        result = await self.session.execute(query)
-        await self.session.commit()
+        result = self.session.execute(query)
         
         return result.rowcount
     

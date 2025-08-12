@@ -8,8 +8,7 @@ from sqlalchemy import (
     ForeignKey, Float, func
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -140,6 +139,8 @@ class ScrapingMetricsModel(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("scraping_jobs.id"), nullable=False)
+    job = relationship("ScrapingJobModel")
+    
     metric_name = Column(String(100), nullable=False)
     metric_value = Column(Float, nullable=False)
     metric_unit = Column(String(20), nullable=True)
@@ -157,6 +158,8 @@ class ScrapingLogModel(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("scraping_jobs.id"), nullable=True)
+    job = relationship("ScrapingJobModel")
+    
     level = Column(String(20), nullable=False)
     message = Column(Text, nullable=False)
     details = Column(JSON, nullable=True)
